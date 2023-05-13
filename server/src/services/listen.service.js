@@ -2,7 +2,7 @@ const config = require('../config/config');
 const axios = require('axios')
 
 const { utils, BigNumber, ethers } = require('ethers');
-const { LastBlock, Events, Transactions, Interactions , Wallets, History} = require('../models');
+const { LastBlock, Events, Transactions, Interactions , Wallets, History, Contracts} = require('../models');
 const dayjs = require('dayjs');
 const Moralis = require("moralis").default;
 const { EvmChain, EvmTransaction } = require("@moralisweb3/common-evm-utils");
@@ -44,7 +44,7 @@ const clients = [
 	}
 ]
 
-const scan = async function(chain, address) {
+const scan_ = async function(chain, address) {
 	let delay
     const currentDelay = 10000	
 	const chainId = chain.id
@@ -55,7 +55,15 @@ const scan = async function(chain, address) {
     const contract = new ethers.Contract(address, [], provider)
 		
 	setTimeout(async function tick() {
-        try {			
+        try {	
+			
+			const contracts = await Contracts.find({})
+
+			const response = await Moralis.EvmApi.events.getContractLogs({
+				address,
+				chain,
+			});
+
 			const currentBlock = await provider.getBlockNumber()	
 								
 			let lastBlock = await LastBlock.findOne({ chainId, address })
@@ -127,6 +135,56 @@ const scan = async function(chain, address) {
             console.log('ERROR', error)			
         }
       	setTimeout(tick, delay);             
+    }, 1000)
+}
+
+const scan = async function() {
+	let delay
+    const currentDelay = 60000	
+	
+	console.log(`SCAN STARTED`)	
+	
+	setTimeout(async function tick() {
+        try {	
+			
+			const contracts = await Contracts.find({})
+
+			console.log(contracts)
+
+			for (let i = 0; i < contracts.length; i++) {
+				const contract = contracts[i];
+				const response = await Moralis.EvmApi.events.getContractLogs({
+					address: contract.address,
+					chain: BigNumber.from(contract.chainId)._hex,
+					fromBlock: contract.lastBlockNumber
+				});
+				console.log(response)
+				const txs = response.getResult()
+			
+				if (txs.length) {
+					console.log(txs[0].toJSON())
+
+					// await Transactions.bulkWrite(txs.map((t) => { 
+					// 	//console.log(`EVENT:`, e)
+					// 	const transactionHash = t.transactionHash
+					// 	return { updateOne: {
+					// 		filter: {
+					// 			chainId,							
+					// 			transactionHash,								
+					// 		},
+					// 		update: { $set: {
+					// 			chainId,							
+					// 			transactionHash,
+					// 		} },
+					// 		upsert: true
+					// 	}}
+					// }))
+				}
+			}
+        } catch (error) {
+            console.log('ERROR', error)			
+        }
+      	//setTimeout(tick, delay);             
     }, 1000)
 }
 
@@ -208,12 +266,13 @@ const walletHistory = async function() {
         try {			
 			const wallet = await Wallets.findOne({ $or: [
 				{ checkedAt: null },
-				{ checkedAt: { $lt: dayjs().subtract(100, 'seconds') } },
+				{ checkedAt: { $lt: dayjs().subtract(600, 'seconds') } },
 			]})	
 
-			console.log(wallet)
+			
 
 			if(wallet) {
+				console.log('check', wallet.address)
 				for (let i = 0; i < chains.length; i++) {
 					const chain = chains[i];
 					
@@ -268,9 +327,9 @@ async function init() {
 	await Moralis.start({
 		apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjYxZjYwOGU5LTI1MGQtNDJkMi1hMzUyLTY2NTZlYjVkMTNlOSIsIm9yZ0lkIjoiMjQzODY4IiwidXNlcklkIjoiMjQ2MzY3IiwidHlwZUlkIjoiNzgzNTJmZDQtNmI3Yy00MWRhLWI0Y2ItZDEwYmEzMzNmNjI2IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE2ODM5MzE0NDgsImV4cCI6NDgzOTY5MTQ0OH0.kpboafHtPKVpqQZ9SpOXrhC35T9S58q6Fl6unQyJNzs'
 	});
-	getTransactions(chains[0])
-	scan(chains[0], '0xCBC87C71e53eF0501aCD2F9ceE29f3B9C35670F1')
-	walletHistory()
+	//getTransactions(chains[0])
+	scan()
+	//walletHistory()
 }
 init()
 

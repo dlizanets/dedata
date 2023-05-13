@@ -4,3 +4,5 @@ module.exports.Transactions = require('./transactions.model').Transactions;
 module.exports.Interactions = require('./interactions.model').Interactions;
 module.exports.Wallets = require('./wallets.model').Wallets;
 module.exports.History = require('./history.model').History;
+module.exports.Contracts = require('./contracts.model').Contracts;
+
