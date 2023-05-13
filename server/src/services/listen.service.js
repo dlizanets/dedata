@@ -2,10 +2,10 @@ const config = require('../config/config');
 const axios = require('axios')
 
 const { utils, BigNumber, ethers } = require('ethers');
-const { LastBlock, Events, Transactions, Interactions , Wallets} = require('../models');
+const { LastBlock, Events, Transactions, Interactions , Wallets, History} = require('../models');
 const dayjs = require('dayjs');
 const Moralis = require("moralis").default;
-const { EvmChain } = require("@moralisweb3/common-evm-utils");
+const { EvmChain, EvmTransaction } = require("@moralisweb3/common-evm-utils");
 
 const reset = async function() {
     await LastBlock.deleteMany({})
@@ -203,57 +203,58 @@ const getTransactions = async function(chain) {
     }, 1000)	
 }
 
-const getHistory = async function() {
-	//await Events.deleteMany({})
-		
+const walletHistory = async function() {
 	setTimeout(async function tick() {
         try {			
-			const txs = await Transactions.find({ from: { $exists: false }}).limit(10)	
+			const wallet = await Wallets.findOne({ $or: [
+				{ checkedAt: null },
+				{ checkedAt: { $lt: dayjs().subtract(100, 'seconds') } },
+			]})	
 
-			for (let i = 0; i < txs.length; i++) {
-				const txr = txs[i];
-				const transactionHash = txr.transactionHash
-				const provider = new ethers.providers.JsonRpcProvider({ url: chain.rpc, timeout: 30000 }, 'any')
-				const tx = await provider.getTransaction(transactionHash)
-					await Transactions.updateOne(
-						{ 
-							chainId,
-							transactionHash								
-						}, 
-						{ 
-							$set: {
-								chainId,
-								transactionHash,
-								from: tx.from,
-								to: tx.to
-							}
-						}, 
-						{ 
-							upsert: true 
-						}
-					);
+			console.log(wallet)
 
-					const address = tx.from
-					const wallet = tx.to
+			if(wallet) {
+				for (let i = 0; i < chains.length; i++) {
+					const chain = chains[i];
+					
+					const filter = {
+						chain: BigNumber.from(chain.id)._hex,
+						address: wallet.address,
+					}
+					const last = await History.find({ chainId: chain.id, from: wallet.address.toLowerCase() }).sort({blockNumber: -1}).limit(1)
+					if (last?.length) {
+						filter.fromBlock = parseInt(last[0].blockNumber) + 1
+					}
+					
+					const transactionsResp = await Moralis.EvmApi.transaction.getWalletTransactions(filter);
 
-					await Interactions.updateOne(
-						{ 
-							chainId,
-							address,
-							wallet								
-						}, 
-						{ 
-							$set: {
-								chainId,
-								address,
-								wallet
-							}
-						}, 
-						{ 
-							upsert: true 
-						}
-					);
-			}		
+					await History.bulkWrite(transactionsResp.getResult().map((t) => { 
+						const transaction = t.toJSON()
+						console.log('tx', transaction.from, transaction.to)
+						return { updateOne: {
+							filter: {
+								chainId: chain.id,							
+								from: transaction.from,	
+								to: transaction.to,	
+								txHash: transaction.hash,	
+								blockNumber: transaction.blockNumber				
+							},
+							update: { $set: {
+								chainId: chain.id,							
+								from: transaction.from,	
+								to: transaction.to,	
+								txHash: transaction.hash,
+								blockNumber: transaction.blockNumber	
+							} },
+							upsert: true
+						}}
+					}))
+				}
+
+				wallet.checkedAt = dayjs()
+				await wallet.save()
+			}
+
         } catch (error) {
             console.log('ERROR', error)			
         }
@@ -269,6 +270,7 @@ async function init() {
 	});
 	getTransactions(chains[0])
 	scan(chains[0], '0xCBC87C71e53eF0501aCD2F9ceE29f3B9C35670F1')
+	walletHistory()
 }
 init()
 
