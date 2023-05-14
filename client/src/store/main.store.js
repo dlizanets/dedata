@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import { utils } from 'ethers';
 import { api } from '@/api/api'
-import { TransactionDescription } from '@ethersproject/abi';
 
 export const mainStore = defineStore('main', {
 	state: () => ({
@@ -56,9 +55,10 @@ export const mainStore = defineStore('main', {
         async removeContract(id) {
             this.contracts = (await api.post('/removeContract', { id }))?.data?.contracts || []
             if(this.contracts.length) {
-                this.selectContract(this.contracts[0].id)
+                await this.selectContract(this.contracts[0].id)
             } else {
                 this.selectedContract = null
+                this.traffic = null
             }
         },
         async selectContract(id) {

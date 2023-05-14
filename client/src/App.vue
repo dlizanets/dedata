@@ -10,6 +10,10 @@
 				<div class="col-12">
 					<Traffic/>				
 				</div>
+
+				<div class="col-12">
+					<Acquisition/>				
+				</div>
 							
 				<div class="col-12">
 					<router-view v-slot="{ Component, route }">
@@ -30,35 +34,18 @@
 	import Header from '@/views/partials/Header.vue';
 	import Contracts from '@/views/Contracts.vue'
 	import Traffic from '@/views/Traffic.vue'
+	import Acquisition from '@/views/Acquisition.vue'
 
 	export default {
 		name: "App",
-		components: { Header, Contracts, Traffic }, 
+		components: { Header, Contracts, Traffic, Acquisition }, 
 		data() {
 			return {
 				
 			};
 		},
 
-		async mounted() {
-			
-			//this.sockets.subscribe('TRANSFER', this.emitTransfer)
-			
-		},
-
-		async mounted() {
-			
-			//this.sockets.subscribe('TRANSFER', this.emitTransfer)
-			
-		},
-
-		watch: {
-			
-		},
-		
 		methods: {
-			
-			
 			async updateContractData() {		
 				try {
 									

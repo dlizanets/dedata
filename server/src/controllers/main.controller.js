@@ -16,13 +16,19 @@ const getTraffic = catchAsync(async (req, res) => {
 	const interractions = await Interactions.find({ chainId, address: contract.address })
 	const totalUsers = await Interactions.countDocuments({ chainId, address: contract.address })
 
+	const addresses = interractions.map(i => i.wallet.toLowerCase())
+
+	const history = await History.find({ from: { $in: addresses}, to: { $in: bc.partners.map(p => p.address.toLowerCase() )} })
+
+	console.log(history)
+
 	const transactions = await Transactions.find({ 
 		chainId, 
 		from: { $in: interractions.map(i => i.wallet)},
 		to: contract.address
 	})
 	
-	res.send({ interractions, transactions, totalUsers });
+	res.send({ interractions, transactions, totalUsers, history });
 });
 
 const formatResult = async function (promotions) {
