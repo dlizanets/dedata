@@ -5,6 +5,7 @@ const contractsSchema = mongoose.Schema(
   {
     address: { type: String, index: true, required: true },
     chainId: { type: String, index: true, required: true },
+    startBlockNumber: { type: Number, required: true },
     lastBlockNumber: { type: Number, required: true }
   },
   {

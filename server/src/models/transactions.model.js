@@ -7,7 +7,8 @@ const transactionsSchema = mongoose.Schema(
     transactionHash: { type: String, index: true, required: true },
     from: { type: String, index: true }, 
     to: { type: String, index: true }, 
-    checked: { type: Boolean, index: true, default: true }
+    checked: { type: Boolean, index: true, default: true },
+    timestamp: { type: Date, index: true, default: Date.now() }, 
   },
   {
     timestamps: true,

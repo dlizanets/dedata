@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { utils } from 'ethers';
 import { api } from '@/api/api'
+import { TransactionDescription } from '@ethersproject/abi';
 
 export const mainStore = defineStore('main', {
 	state: () => ({
@@ -31,7 +32,8 @@ export const mainStore = defineStore('main', {
                 address: '0x6cad6e1abc83068ea98924aef37e996ed02abf1c',
                 chainId: '137'
             },
-        ]
+        ],
+        traffic: null,
 	}),
 
     getters: {
@@ -58,11 +60,14 @@ export const mainStore = defineStore('main', {
             } else {
                 this.selectedContract = null
             }
-            
         },
-        selectContract(id) {
+        async selectContract(id) {
             this.selectedContract = this.contracts.find(c => c.id === id)
-        }  
+            await this.getTraffic(id)
+        },
+        async getTraffic(id) {
+            this.traffic = (await api.get('/getTraffic', { params: { id } }))?.data
+        },
 	},
 });
 

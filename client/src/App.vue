@@ -6,7 +6,11 @@
 			<div class="row g-3 justify-content-center">
 				<div class="col-12">
 					<Contracts/>				
-				</div>				
+				</div>	
+				<div class="col-12">
+					<Traffic/>				
+				</div>
+							
 				<div class="col-12">
 					<router-view v-slot="{ Component, route }">
 						<transition name="fade" mode="out-in">
@@ -25,10 +29,11 @@
 <script>
 	import Header from '@/views/partials/Header.vue';
 	import Contracts from '@/views/Contracts.vue'
+	import Traffic from '@/views/Traffic.vue'
 
 	export default {
 		name: "App",
-		components: { Header, Contracts }, 
+		components: { Header, Contracts, Traffic }, 
 		data() {
 			return {
 				

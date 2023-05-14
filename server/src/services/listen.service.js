@@ -1,190 +1,207 @@
 const config = require('../config/config');
 const axios = require('axios')
-
+const bc = require('../config/bc')
 const { utils, BigNumber, ethers } = require('ethers');
 const { LastBlock, Events, Transactions, Interactions , Wallets, History, Contracts} = require('../models');
 const dayjs = require('dayjs');
 const Moralis = require("moralis").default;
 const { EvmChain, EvmTransaction } = require("@moralisweb3/common-evm-utils");
+const { Network, Alchemy, AlchemySubscription } = require('alchemy-sdk') ;
+
+const alchemyPly = new Alchemy({
+    apiKey: "jBZHTGriUbwLW1baF5E4osgbxIpehULq",
+    network: Network.MATIC_MAINNET,
+});
+const alchemyEth = new Alchemy({
+    apiKey: "jBZHTGriUbwLW1baF5E4osgbxIpehULq",
+    network: Network.ETH_MAINNET,
+});
+
 
 const reset = async function() {
-    await LastBlock.deleteMany({})
-	await Events.deleteMany({})
+    //await LastBlock.deleteMany({})
+	//await Events.deleteMany({})
 	await Transactions.deleteMany({})
 	await Interactions.deleteMany({})
+
+	const contracts = await Contracts.find({ })
+	for (let i = 0; i < contracts.length; i++) {
+		const contract = contracts[i]
+		contract.lastBlockNumber = contract.startBlockNumber
+		await contract.save()
+	}
 	
     console.log('RESET COMPLETED')
 }
 
-const chains = [
-	{
-		name: 'Polygon',
-		id: '137',
-		wss: 'wss://matic.getblock.io/e2370cd5-76ec-459e-a41d-a69c0950795e/mainnet/', //wss://rpc-mainnet.matic.network
-		rpc: 'https://rpc.ankr.com/polygon'
-	},
-]
-const partnersList = [
-	{
-		name: 'Lens',
-		address: '0xDb46d1Dc155634FbC732f92E853b10B288AD5a1d',
-		chainId: '137'
-	},
-	{
-		name: 'Galxe',
-		address: '0x6cad6e1abc83068ea98924aef37e996ed02abf1c',
-		chainId: '137'
-	},
-]
-const clients = [
-	{
-		name: 'Amplicata',
-		address: '0xCBC87C71e53eF0501aCD2F9ceE29f3B9C35670F1',
-		chainId: '137'
-	}
-]
-
-const scan_ = async function(chain, address) {
-	let delay
-    const currentDelay = 10000	
-	const chainId = chain.id
+const scan = async function() {
+    console.log(`SCAN STARTED`)
+	const currentDelay = 10000	
+	const step = 3000	
 	
-	console.log(`SCAN STARTED: ${chainId}:${address}`)
-	const step = 3000		
-	const provider = new ethers.providers.JsonRpcProvider({ url: chain.rpc, timeout: 30000 }, 'any')
-    const contract = new ethers.Contract(address, [], provider)
-		
-	setTimeout(async function tick() {
-        try {	
-			
-			const contracts = await Contracts.find({})
+	for (let c = 0; c < bc.chains.length; c++) {
+		const chain = bc.chains[c];
+		const chainId = chain.id
+		const provider = new ethers.providers.JsonRpcProvider({ url: chain.rpc, timeout: 30000 }, 'any')
+		let delay = currentDelay
+		setTimeout(async function tick() {
+			try {	
+				const contracts = await Contracts.find({ chainId })
+				const currentBlock = await provider.getBlockNumber()
 
-			const response = await Moralis.EvmApi.events.getContractLogs({
-				address,
-				chain,
-			});
+				for (let i = 0; i < contracts.length; i++) {
+					const contract = contracts[i];
+					const address = contract.address
+					
+					const lastBlock = contract.lastBlockNumber
 
-			const currentBlock = await provider.getBlockNumber()	
-								
-			let lastBlock = await LastBlock.findOne({ chainId, address })
-			//if (!lastBlock) lastBlock = await LastBlock.create({ chainId, address, blockNumber: currentBlock })	
-			if (!lastBlock) lastBlock = await LastBlock.create({ chainId, address, blockNumber: 42655743 })		
+					if (lastBlock < currentBlock) {	
 						
-			if (lastBlock.blockNumber < currentBlock) {					
-				let fromBlock = lastBlock.blockNumber + 1
-				let toBlock = lastBlock.blockNumber + step - 1			
-				if (toBlock > currentBlock) {
-					toBlock = currentBlock
-					delay = currentDelay
-				} else {
-					delay = 100
-				}
-				const rawEvents = await contract.queryFilter("*", fromBlock, toBlock)				
-				const events = []
-				
-				console.log(`SCAN ${chainId}:${address} from: ${fromBlock} to: ${toBlock} current: ${currentBlock} left: ${currentBlock - toBlock} events: ${rawEvents.length}`)
+						console.log(lastBlock, currentBlock)
 
-				const transactions = []
-				if (rawEvents.length) {
-					await Events.bulkWrite(rawEvents.map((e) => { 
-						//console.log(`EVENT:`, e)
-						const txhIdx = transactions.findIndex(t => t.transactionHash === e.transactionHash)
-						if (txhIdx == -1) transactions.push(e)
-						return { updateOne: {
-							filter: {
-								address, 	
-								chainId,							
-								blockNumber: e.blockNumber,
-								logIndex: e.logIndex,								
-							},
-							update: { $set: {
-								address,
-								chainId,
-								blockNumber: e.blockNumber,
-								logIndex: e.logIndex,						
-								raw: e,
-							} },
-							upsert: true
-						}}
-					}))	
+						let fromBlock = lastBlock + 1
+						let toBlock = lastBlock + step - 1			
+						if (toBlock > currentBlock) {
+							toBlock = currentBlock
+							//delay = currentDelay
+						} else {
+							//delay = 100
+						}
+						const contractInstance = new ethers.Contract(address, [], provider)
 
-					await Transactions.bulkWrite(transactions.map((t) => { 
-						//console.log(`EVENT:`, e)
-						const transactionHash = t.transactionHash
-						return { updateOne: {
-							filter: {
-								chainId,							
-								transactionHash,								
-							},
-							update: { $set: {
-								chainId,							
-								transactionHash,
-							} },
-							upsert: true
-						}}
-					}))
-				}
+						const rawEvents = await contractInstance.queryFilter("*", fromBlock, toBlock)				
+						const events = []
+						
+						console.log(`SCAN ${chainId}:${address} from: ${fromBlock} to: ${toBlock} current: ${currentBlock} left: ${currentBlock - toBlock} events: ${rawEvents.length}`)
+
+						const transactions = []
+						if (rawEvents.length) {
+							await Events.bulkWrite(rawEvents.map((e) => { 
+								const txhIdx = transactions.findIndex(t => t.transactionHash === e.transactionHash)
+								if (txhIdx == -1) transactions.push(e)
+								return { updateOne: {
+									filter: {
+										address, 	
+										chainId,							
+										blockNumber: e.blockNumber,
+										logIndex: e.logIndex,								
+									},
+									update: { $set: {
+										address,
+										chainId,
+										blockNumber: e.blockNumber,
+										logIndex: e.logIndex,						
+										raw: e,
+									} },
+									upsert: true
+								}}
+							}))	
+
+							await Transactions.bulkWrite(transactions.map((t) => { 
+								const transactionHash = t.transactionHash
+								return { updateOne: {
+									filter: {
+										chainId,							
+										transactionHash,								
+									},
+									update: { $set: {
+										chainId,							
+										transactionHash,
+									} },
+									upsert: true
+								}}
+							}))
+						}
+						
+						contract.lastBlockNumber = toBlock
+						await contract.save()					
+					}
 				
-				//if (isProd) {
-				lastBlock.blockNumber = toBlock
-				await lastBlock.save()					
-				//}								
-				//console.log('LOTTERY SCAN COMPLETED')
-			}			
-        } catch (error) {
-            console.log('ERROR', error)			
-        }
-      	setTimeout(tick, delay);             
-    }, 1000)
+				}
+			} catch (error) {
+				console.log('ERROR', error)			
+			}
+			setTimeout(tick, delay);             
+		}, 1000)
+	}
 }
 
-const scan = async function() {
-	let delay
-    const currentDelay = 60000	
-	
+const scan_ = async function() {
+	let delay = 10000
+    	
 	console.log(`SCAN STARTED`)	
-	
+
+	const contractsByChain = {}
+
 	setTimeout(async function tick() {
         try {	
-			
-			const contracts = await Contracts.find({})
+			for (let c = 0; c < bc.chains.length; c++) {
+				const chain = bc.chains[c];
+				const chainId = chain.id
 
-			console.log(contracts)
-
-			for (let i = 0; i < contracts.length; i++) {
-				const contract = contracts[i];
-				const response = await Moralis.EvmApi.events.getContractLogs({
-					address: contract.address,
-					chain: BigNumber.from(contract.chainId)._hex,
-					fromBlock: contract.lastBlockNumber
-				});
-				console.log(response)
-				const txs = response.getResult()
-			
-				if (txs.length) {
-					console.log(txs[0].toJSON())
-
-					// await Transactions.bulkWrite(txs.map((t) => { 
-					// 	//console.log(`EVENT:`, e)
-					// 	const transactionHash = t.transactionHash
-					// 	return { updateOne: {
-					// 		filter: {
-					// 			chainId,							
-					// 			transactionHash,								
-					// 		},
-					// 		update: { $set: {
-					// 			chainId,							
-					// 			transactionHash,
-					// 		} },
-					// 		upsert: true
-					// 	}}
-					// }))
+				const contracts = await Contracts.find({ chainId })
+				if (contractsByChain[chainId]?.length != contracts.length) {
+					contractsByChain[chainId] = contracts
+					alchemyPly.ws.removeAllListeners()
+					console.log(contracts.map(c => { return { to: c.address} }))
+					alchemyPly.ws.on(
+						{
+						  method: AlchemySubscription.MINED_TRANSACTIONS,
+						  addresses: contracts.map(c => { return { to: c.address} }),
+						  includeRemoved: true,
+						  hashesOnly: false,
+						},
+						async (td) => {
+							const tx = td.transaction
+							const transactionHash = tx.hash
+							const from = utils.getAddress(tx.from)
+							const to = utils.getAddress(tx.to)
+							console.log('TX', chainId, from, to)
+							await Transactions.create({  
+								chainId, 
+								transactionHash,
+								from: from,
+								to: to,
+								timestamp: dayjs(),	
+							});
+							await Interactions.updateOne(
+								{ 
+									chainId,
+									address: to,
+									wallet: from								
+								}, 
+								{ 
+									$set: {
+										chainId,
+										address: to,
+										wallet: from	
+									}
+								}, 
+								{ 
+									upsert: true 
+								}
+							);
+							await Wallets.updateOne(
+								{ 
+									address: from,
+								}, 
+								{ 
+									$set: {
+										address: from,
+									}
+								}, 
+								{ 
+									upsert: true 
+								}
+							);
+						}
+					);
 				}
 			}
         } catch (error) {
             console.log('ERROR', error)			
         }
-      	//setTimeout(tick, delay);             
+      	setTimeout(tick, delay);             
     }, 1000)
 }
 
@@ -198,29 +215,25 @@ const getTransactions = async function(chain) {
 			for (let i = 0; i < txs.length; i++) {
 				const txr = txs[i];
 				const transactionHash = txr.transactionHash
+				const chain = bc.chains.find(c => c.id === txr.chainId)
 				const provider = new ethers.providers.JsonRpcProvider({ url: chain.rpc, timeout: 30000 }, 'any')
 				const tx = await provider.getTransaction(transactionHash)
+				const block = await provider.getBlock(tx.blockHash)
+				
+				await Transactions.updateOne(
+					{  chainId, transactionHash	}, 
+					{ $set: {
+						chainId,
+						transactionHash,
+						from: tx.from,
+						to: tx.to,
+						timestamp: block.timestamp,
+					}}, 
+					{ upsert: true }
+				);
 
-					await Transactions.updateOne(
-						{ 
-							chainId,
-							transactionHash								
-						}, 
-						{ 
-							$set: {
-								chainId,
-								transactionHash,
-								from: tx.from,
-								to: tx.to
-							}
-						}, 
-						{ 
-							upsert: true 
-						}
-					);
-
-					const address = tx.to
-					const wallet = tx.from
+				const address = tx.to
+				const wallet = tx.from
 
 					await Interactions.updateOne(
 						{ 
@@ -269,12 +282,10 @@ const walletHistory = async function() {
 				{ checkedAt: { $lt: dayjs().subtract(600, 'seconds') } },
 			]})	
 
-			
-
 			if(wallet) {
 				console.log('check', wallet.address)
-				for (let i = 0; i < chains.length; i++) {
-					const chain = chains[i];
+				for (let i = 0; i < bc.chains.length; i++) {
+					const chain = bc.chains[i];
 					
 					const filter = {
 						chain: BigNumber.from(chain.id)._hex,
@@ -327,8 +338,13 @@ async function init() {
 	await Moralis.start({
 		apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjYxZjYwOGU5LTI1MGQtNDJkMi1hMzUyLTY2NTZlYjVkMTNlOSIsIm9yZ0lkIjoiMjQzODY4IiwidXNlcklkIjoiMjQ2MzY3IiwidHlwZUlkIjoiNzgzNTJmZDQtNmI3Yy00MWRhLWI0Y2ItZDEwYmEzMzNmNjI2IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE2ODM5MzE0NDgsImV4cCI6NDgzOTY5MTQ0OH0.kpboafHtPKVpqQZ9SpOXrhC35T9S58q6Fl6unQyJNzs'
 	});
-	//getTransactions(chains[0])
-	scan()
+
+	// for (let c = 0; c < bc.chains.length; c++) {
+	// 	const chain = bc.chains[c];
+	// 	getTransactions(chain)
+	// }
+	scan_()
+	//scan()
 	//walletHistory()
 }
 init()
